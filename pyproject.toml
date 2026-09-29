@@ -17,10 +17,14 @@ dependencies = [
 plot = [
     "plotly>=6.0",
 ]
+sat = [
+    "python-sat==1.9.dev15",
+]
 
 [project.scripts]
 factorio-solar-solve = "factorio_solar_panel_optimizer.cli:main"
 factorio-solar-plot = "factorio_solar_panel_optimizer.plot_cli:main"
+factorio-solar-sat = "factorio_solar_panel_optimizer.sat_cli:main"
 
 [build-system]
 requires = ["uv_build>=0.12.17,<0.13.0"]
