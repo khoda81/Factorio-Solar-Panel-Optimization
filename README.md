@@ -196,3 +196,28 @@ The SAT frontend:
 Use `--solver /path/to/solver` to select another SAT binary. `--solver auto`
 prefers Kissat and then CaDiCaL. The generated CNF is deleted after the solve
 unless `--keep-cnf` is supplied.
+
+
+### Exact pseudo-Boolean packing (recommended)
+
+For fixed-network target packing, the preferred backend is Exact rather than
+CNF SAT. Exact keeps the global placement counts and per-tile non-overlap
+constraints as native pseudo-Boolean constraints instead of compiling the
+cardinality structure to auxiliary CNF variables.
+
+```bash
+uv sync --extra exact
+
+uv run --extra exact factorio-solar-exact \
+  --planet vulcanus \
+  --roboport temporary \
+  --network support/sample_network.txt \
+  --target-power 34722.222222
+```
+
+The Exact wheel is pinned to 2.2.1. The solve runs in a child process so
+Ctrl-C can terminate it reliably even while the native solver is busy. Use
+`--time-limit SECONDS` for a solver-side limit.
+
+The DIMACS/Kissat/CaDiCaL frontend remains available as
+`factorio-solar-sat` for backend comparisons.
