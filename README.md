@@ -65,3 +65,159 @@ problems, but its not as easy as changing variables, this is not made fully gene
 ## License
 
 This project is available under the [MIT License](LICENSE).
+
+
+## Parameterized planet solver
+
+This fork adds a direct `highspy` CLI so the same MILP can be solved with
+different planetary power profiles without editing model code.
+
+Install/update the environment:
+
+```bash
+uv sync
+```
+
+For the Vulcanus temporary-roboport problem (normal solar panels and
+accumulators):
+
+```bash
+uv run factorio-solar-solve \
+  --planet vulcanus \
+  --roboport temporary \
+  --threads 8
+```
+
+That runs the full simultaneous Stage A+B search. For a much faster packing
+search around the repository's sample electrical network:
+
+```bash
+uv run factorio-solar-solve \
+  --planet vulcanus \
+  --roboport temporary \
+  --threads 8 \
+  --network support/sample_network.txt
+```
+
+Use `--time-limit SECONDS` to cap a run and `--min-power KW` to turn a
+candidate power level into a feasibility target. Results are written under
+`results/`.
+
+The built-in normal-quality presets are:
+
+| Planet | Day | Solar multiplier | Sustained panel power | Accumulators / panel |
+| --- | ---: | ---: | ---: | ---: |
+| Nauvis | 420 s | 100% | 42 kW | 0.84672 |
+| Vulcanus | 90 s | 400% | 168 kW | 0.72576 |
+
+In temporary-roboport mode the central 4x4 roboport must still fit and be
+powered during construction, but the power balance treats its eventual
+footprint as four 2x2 accumulators.
+
+
+### Interactive solution plots
+
+Plotting is optional and uses Plotly rather than Matplotlib:
+
+```bash
+uv sync --extra plot
+
+uv run --extra plot factorio-solar-plot \
+  results/<run>/best.sol \
+  --planet vulcanus \
+  --roboport temporary
+```
+
+The viewer writes a self-contained HTML file beside the solution and opens it
+in the browser. Add `--electric-coverage` to overlay pole/substation supply
+areas, or `--no-show` when running headless.
+
+The solver itself has no plotting dependency.
+
+
+### Smaller periodic cells and target feasibility
+
+A roboport's logistics area is 50x50, so a single centered roboport per
+periodic cell remains connected for repeat widths up to 50 tiles. The new CLI
+supports `--grid 20` through `--grid 50` and reports both total power and
+power density so different cell sizes can be compared fairly.
+
+For hard endgames, target feasibility is often better than another long
+maximize run:
+
+```bash
+uv run factorio-solar-solve \
+  --planet vulcanus \
+  --roboport temporary \
+  --threads 8 \
+  --network support/sample_network.txt \
+  --target-power 34722.222222
+```
+
+`--target-power` keeps the normal power objective as search guidance, adds the
+integer solar/accumulator count bounds implied by the target, and configures
+HiGHS to stop after the first improving feasible solution. This is usually much
+friendlier to the MIP heuristics than a zero-objective feasibility model.
+
+
+### Interrupting long solves
+
+The CLI runs HiGHS on a worker thread and enables HiGHS' MIP/simplex/IPM
+interrupt callbacks. Ctrl-C is handled by the Python main thread, which asks
+HiGHS to stop cleanly and return its current solver status.
+
+
+### SAT exact-cover packing
+
+For a fixed electrical network, the packing stage can also be compiled to
+plain DIMACS CNF and solved by an external SAT solver such as Kissat or CaDiCaL.
+
+```bash
+uv sync --extra sat
+
+uv run --extra sat factorio-solar-sat \
+  --planet vulcanus \
+  --roboport temporary \
+  --network support/sample_network.txt \
+  --target-power 34722.222222
+```
+
+The SAT frontend:
+
+- removes panel/accumulator anchors that collide with fixed infrastructure;
+- removes anchors that are not electrically powered;
+- gives every remaining free tile an exact-one constraint over covering
+  panels, covering accumulators, or a hole;
+- derives the minimum integer panel and accumulator counts from the target and
+  fixes those counts exactly using PySAT cardinality networks;
+- writes DIMACS, invokes `kissat` or `cadical`, and reconstructs the normal
+  `best.sol` format from a SAT model.
+
+Use `--solver /path/to/solver` to select another SAT binary. `--solver auto`
+prefers Kissat and then CaDiCaL. The generated CNF is deleted after the solve
+unless `--keep-cnf` is supplied.
+
+
+### Exact pseudo-Boolean packing (recommended)
+
+For fixed-network target packing, the preferred backend is Exact rather than
+CNF SAT. Exact keeps the global placement counts and per-tile non-overlap
+constraints as native pseudo-Boolean constraints instead of compiling the
+cardinality structure to auxiliary CNF variables.
+
+```bash
+uv sync --extra exact
+
+uv run --extra exact factorio-solar-exact \
+  --planet vulcanus \
+  --roboport temporary \
+  --network support/sample_network.txt \
+  --target-power 34722.222222
+```
+
+The Exact wheel is pinned to 2.2.1. The solve runs in a child process so
+Ctrl-C can terminate it reliably even while the native solver is busy. Use
+`--time-limit SECONDS` for a solver-side limit.
+
+The DIMACS/Kissat/CaDiCaL frontend remains available as
+`factorio-solar-sat` for backend comparisons.

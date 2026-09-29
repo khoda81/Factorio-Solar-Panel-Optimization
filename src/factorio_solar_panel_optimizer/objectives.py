@@ -1,8 +1,27 @@
 import numpy as np
-import parameters as parameters
-from support import utilities as util
-import matplotlib.pyplot as plt
+from . import parameters
+from .support import utilities as util
 import scipy.sparse as sp
+
+
+def roboport_roots_for_grid(grid: int) -> tuple[int, ...]:
+    """Return fixed roboport anchors for supported periodic cells.
+
+    A single centered roboport is sufficient for any repeating cell up to
+    50 tiles wide because its 50x50 logistics area touches/overlaps the
+    neighboring cell's roboport. Preserve the original 100x100 two-roboport
+    layout for legacy callers.
+    """
+
+    if 4 <= grid <= 50:
+        anchor = (grid - 4) // 2
+        return (anchor * grid + anchor,)
+    if grid == 100:
+        return (2323, 7373)
+    raise ValueError(
+        "Periodic roboport placement is supported for grid sizes 4..50 "
+        "and for the legacy 100x100 layout."
+    )
 
 def construct_max_building_problem(grid, n_solar):
 
@@ -599,9 +618,8 @@ def construct_restrictive_solver(
         even when min_substations is None or less than three.
     """
 
-    roboport_count = 2
-    if grid == 50:
-        roboport_count -= 1
+    roboport_roots = roboport_roots_for_grid(grid)
+    roboport_count = len(roboport_roots)
 
     d = grid
     dd = d**2
@@ -678,10 +696,6 @@ def construct_restrictive_solver(
 
     single_column_constraint = np.zeros((size, 1))
     single_column_constraint[3*dd:4*dd, 0] = 1
-    if roboport_count == 1:
-        roboport_roots = (1173,)
-    else:
-        roboport_roots = (2323, 7373)
     for root in roboport_roots:
         single_column_constraint[3*dd + root, 0] = 0
     A = np.hstack((A, single_column_constraint))
@@ -937,7 +951,7 @@ def construct_matrix_coverage_connectivity_ensured_variable_root_color_target(
     if not np.isfinite(min_power) or min_power < 0:
         raise ValueError("min_power must be a finite nonnegative number.")
 
-    from coverage_objectives import (
+    from .coverage_objectives import (
         MEDIUM_COLOR_PATTERNS_2,
         MEDIUM_COLOR_PATTERNS_5,
         MEDIUM_COLOR_PATTERNS_6,
@@ -1174,7 +1188,7 @@ def construct_matrix_coverage_connectivity_ensured_fixed_root_color_target(
     color_mod_12_var = original_n + 1
     new_n = original_n + 2
 
-    roboport_count = 1 if grid == 50 else 2
+    roboport_count = len(roboport_roots_for_grid(grid))
     solar_unit_power = parameters.SOLAR_PANEL_POWER * parameters.ETA_S
     accumulator_unit_power = (
         parameters.ACCUMULATOR_CHARGE
@@ -1302,10 +1316,8 @@ def construct_matrix_coverage_fixed_network(
     """
 
 
-    roboport_count = 2
-
-    if grid == 50:
-        roboport_count -= 1
+    roboport_roots = roboport_roots_for_grid(grid)
+    roboport_count = len(roboport_roots)
 
     d = grid
     dd = d**2
@@ -1360,11 +1372,8 @@ def construct_matrix_coverage_fixed_network(
     single_column_constraint = np.zeros((size, 1))
     single_column_constraint[3*dd:4*dd, 0] = 1
 
-    if roboport_count == 1:
-        single_column_constraint[3*dd+1173, 0] = 0
-    else:
-        single_column_constraint[3*dd+2323, 0] = 0
-        single_column_constraint[3*dd+7373, 0] = 0
+    for root in roboport_roots:
+        single_column_constraint[3*dd + root, 0] = 0
 
     A = np.hstack((A, single_column_constraint))
     b_ub = np.concatenate((b_ub, [0]))
