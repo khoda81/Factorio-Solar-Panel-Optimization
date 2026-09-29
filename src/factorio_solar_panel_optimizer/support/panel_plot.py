@@ -25,6 +25,33 @@ def _go():
     return go
 
 
+def _visible_periodic_rectangles(
+    coords: Iterable[tuple[int, int]] | np.ndarray,
+    structure_size: int,
+    domain_size: int,
+    periodic: bool,
+):
+    """Yield only rectangle copies that actually intersect the visible cell."""
+
+    coords = np.asarray(list(coords), dtype=float).reshape(-1, 2)
+    if coords.size == 0:
+        return
+
+    shifts = (-domain_size, 0, domain_size) if periodic else (0,)
+    for x, y in coords:
+        for dx in shifts:
+            x0 = x + dx
+            x1 = x0 + structure_size
+            if x1 <= 0 or x0 >= domain_size:
+                continue
+            for dy in shifts:
+                y0 = y + dy
+                y1 = y0 + structure_size
+                if y1 <= 0 or y0 >= domain_size:
+                    continue
+                yield x0, y0, x1, y1
+
+
 def _add_rectangles(
     fig,
     coords: Iterable[tuple[int, int]] | np.ndarray,
@@ -37,39 +64,38 @@ def _add_rectangles(
     name: str,
     line_width: float = 1.0,
 ) -> None:
-    coords = np.asarray(list(coords), dtype=float).reshape(-1, 2)
-    if coords.size == 0:
+    """Add all same-style rectangles as one Plotly trace.
+
+    Plotly layout shapes are SVG objects and become painfully slow in the
+    thousands. One filled Scatter trace can represent every rectangle of an
+    entity type with None-separated closed polygons, which keeps rendering
+    essentially constant in trace count.
+    """
+
+    xs: list[float | None] = []
+    ys: list[float | None] = []
+
+    for x0, y0, x1, y1 in _visible_periodic_rectangles(
+        coords,
+        structure_size,
+        domain_size,
+        periodic,
+    ):
+        xs.extend((x0, x1, x1, x0, x0, None))
+        ys.extend((y0, y0, y1, y1, y0, None))
+
+    if not xs:
         return
 
-    shifts = (-domain_size, 0, domain_size) if periodic else (0,)
-    for dx in shifts:
-        for dy in shifts:
-            for x, y in coords:
-                fig.add_shape(
-                    type="rect",
-                    x0=x + dx,
-                    y0=y + dy,
-                    x1=x + dx + structure_size,
-                    y1=y + dy + structure_size,
-                    fillcolor=fillcolor,
-                    line={"color": linecolor, "width": line_width},
-                    layer="below",
-                )
-
-    # One legend entry per entity type; shapes themselves do not need to carry
-    # thousands of legend entries.
     go = _go()
     fig.add_trace(
         go.Scatter(
-            x=[None],
-            y=[None],
-            mode="markers",
-            marker={
-                "symbol": "square",
-                "size": 12,
-                "color": fillcolor,
-                "line": {"color": linecolor, "width": line_width},
-            },
+            x=xs,
+            y=ys,
+            mode="lines",
+            fill="toself",
+            fillcolor=fillcolor,
+            line={"color": linecolor, "width": line_width},
             name=name,
             hoverinfo="skip",
         )
@@ -86,7 +112,7 @@ def plot_solar_array_periodic(
     *,
     plot_electric=False,
 ):
-    """Build an interactive Plotly figure for one periodic 50x50 cell."""
+    """Build an interactive Plotly figure for one periodic cell."""
 
     go = _go()
     fig = go.Figure()
