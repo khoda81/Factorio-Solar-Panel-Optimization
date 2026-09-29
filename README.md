@@ -133,3 +133,27 @@ in the browser. Add `--electric-coverage` to overlay pole/substation supply
 areas, or `--no-show` when running headless.
 
 The solver itself has no plotting dependency.
+
+
+### Smaller periodic cells and target feasibility
+
+A roboport's logistics area is 50x50, so a single centered roboport per
+periodic cell remains connected for repeat widths up to 50 tiles. The new CLI
+supports `--grid 20` through `--grid 50` and reports both total power and
+power density so different cell sizes can be compared fairly.
+
+For hard endgames, target feasibility is often better than another long
+maximize run:
+
+```bash
+uv run factorio-solar-solve \
+  --planet vulcanus \
+  --roboport temporary \
+  --threads 8 \
+  --network support/sample_network.txt \
+  --target-power 34722.222222
+```
+
+`--target-power` fixes the sustained-power variable and switches to a zero
+objective. HiGHS can then stop at the first feasible packing or prove that
+target impossible instead of spending time optimizing beyond it.
