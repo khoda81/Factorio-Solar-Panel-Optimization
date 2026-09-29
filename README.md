@@ -165,3 +165,34 @@ friendlier to the MIP heuristics than a zero-objective feasibility model.
 The CLI runs HiGHS on a worker thread and enables HiGHS' MIP/simplex/IPM
 interrupt callbacks. Ctrl-C is handled by the Python main thread, which asks
 HiGHS to stop cleanly and return its current solver status.
+
+
+### SAT exact-cover packing
+
+For a fixed electrical network, the packing stage can also be compiled to
+plain DIMACS CNF and solved by an external SAT solver such as Kissat or CaDiCaL.
+
+```bash
+uv sync --extra sat
+
+uv run --extra sat factorio-solar-sat \
+  --planet vulcanus \
+  --roboport temporary \
+  --network support/sample_network.txt \
+  --target-power 34722.222222
+```
+
+The SAT frontend:
+
+- removes panel/accumulator anchors that collide with fixed infrastructure;
+- removes anchors that are not electrically powered;
+- gives every remaining free tile an exact-one constraint over covering
+  panels, covering accumulators, or a hole;
+- derives the minimum integer panel and accumulator counts from the target and
+  fixes those counts exactly using PySAT cardinality networks;
+- writes DIMACS, invokes `kissat` or `cadical`, and reconstructs the normal
+  `best.sol` format from a SAT model.
+
+Use `--solver /path/to/solver` to select another SAT binary. `--solver auto`
+prefers Kissat and then CaDiCaL. The generated CNF is deleted after the solve
+unless `--keep-cnf` is supplied.
