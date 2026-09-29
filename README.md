@@ -154,6 +154,14 @@ uv run factorio-solar-solve \
   --target-power 34722.222222
 ```
 
-`--target-power` fixes the sustained-power variable and switches to a zero
-objective. HiGHS can then stop at the first feasible packing or prove that
-target impossible instead of spending time optimizing beyond it.
+`--target-power` keeps the normal power objective as search guidance, adds the
+integer solar/accumulator count bounds implied by the target, and configures
+HiGHS to stop after the first improving feasible solution. This is usually much
+friendlier to the MIP heuristics than a zero-objective feasibility model.
+
+
+### Interrupting long solves
+
+The CLI runs HiGHS on a worker thread and enables HiGHS' MIP/simplex/IPM
+interrupt callbacks. Ctrl-C is handled by the Python main thread, which asks
+HiGHS to stop cleanly and return its current solver status.
