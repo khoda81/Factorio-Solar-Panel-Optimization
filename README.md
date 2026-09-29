@@ -113,3 +113,23 @@ The built-in normal-quality presets are:
 In temporary-roboport mode the central 4x4 roboport must still fit and be
 powered during construction, but the power balance treats its eventual
 footprint as four 2x2 accumulators.
+
+
+### Interactive solution plots
+
+Plotting is optional and uses Plotly rather than Matplotlib:
+
+```bash
+uv sync --extra plot
+
+uv run --extra plot factorio-solar-plot \
+  results/<run>/best.sol \
+  --planet vulcanus \
+  --roboport temporary
+```
+
+The viewer writes a self-contained HTML file beside the solution and opens it
+in the browser. Add `--electric-coverage` to overlay pole/substation supply
+areas, or `--no-show` when running headless.
+
+The solver itself has no plotting dependency.
