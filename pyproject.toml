@@ -1,19 +1,23 @@
 [project]
 name = "factorio-solar-panel-optimization"
 version = "0.1.0"
-description = "Add your description here"
+description = "Optimize periodic Factorio solar arrays with mixed-integer programming"
 readme = "README.md"
 authors = [
     { name = "axiom", email = "20.mahdikh.0@gmail.com" }
 ]
 requires-python = ">=3.13"
 dependencies = [
+    "highspy>=1.15.1",
     "scipy>=1.18.1",
 ]
 
 [project.scripts]
-factorio-solar-panel-optimization = "factorio_solar_panel_optimization:main"
+factorio-solar-solve = "factorio_solar_panel_optimizer.cli:main"
 
 [build-system]
 requires = ["uv_build>=0.12.17,<0.13.0"]
 build-backend = "uv_build"
+
+[tool.uv.build-backend]
+module-name = "factorio_solar_panel_optimizer"
