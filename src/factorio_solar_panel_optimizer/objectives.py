@@ -1,5 +1,5 @@
 import numpy as np
-import parameters as parameters
+from . import parameters
 from support import utilities as util
 import matplotlib.pyplot as plt
 import scipy.sparse as sp
@@ -937,7 +937,7 @@ def construct_matrix_coverage_connectivity_ensured_variable_root_color_target(
     if not np.isfinite(min_power) or min_power < 0:
         raise ValueError("min_power must be a finite nonnegative number.")
 
-    from coverage_objectives import (
+    from .coverage_objectives import (
         MEDIUM_COLOR_PATTERNS_2,
         MEDIUM_COLOR_PATTERNS_5,
         MEDIUM_COLOR_PATTERNS_6,
