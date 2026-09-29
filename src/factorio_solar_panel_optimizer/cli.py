@@ -4,6 +4,7 @@ import argparse
 from datetime import datetime
 from pathlib import Path
 import re
+import threading
 
 import highspy
 import numpy as np
@@ -56,6 +57,7 @@ def _build_highs(
     time_limit: float | None,
     mip_rel_gap: float,
     random_seed: int,
+    stop_after_first_solution: bool,
 ) -> highspy.Highs:
     matrix = sp.csr_matrix(matrix, dtype=np.float64)
     matrix.sort_indices()
@@ -97,10 +99,115 @@ def _build_highs(
     highs.setOptionValue("parallel", "on")
     highs.setOptionValue("random_seed", random_seed)
     highs.setOptionValue("mip_rel_gap", mip_rel_gap)
+    if stop_after_first_solution:
+        highs.setOptionValue("mip_max_improving_sols", 1)
     if time_limit is not None:
         highs.setOptionValue("time_limit", time_limit)
 
     return highs
+
+
+def _run_highs_interruptibly(highs: highspy.Highs) -> None:
+    """Run HiGHS off the main Python thread so Ctrl-C stays responsive."""
+
+    stop_requested = threading.Event()
+    callback_types = (
+        highspy.cb.HighsCallbackType.kCallbackMipInterrupt,
+        highspy.cb.HighsCallbackType.kCallbackSimplexInterrupt,
+        highspy.cb.HighsCallbackType.kCallbackIpmInterrupt,
+    )
+
+    def interrupt_callback(
+        callback_type,
+        message,
+        data_out,
+        data_in,
+        user_callback_data,
+    ):
+        if stop_requested.is_set():
+            data_in.user_interrupt = True
+
+    highs.setCallback(interrupt_callback, None)
+    for callback_type in callback_types:
+        highs.startCallback(callback_type)
+
+    failure: list[BaseException] = []
+
+    def solve() -> None:
+        try:
+            highs.run()
+        except BaseException as exc:
+            failure.append(exc)
+
+    worker = threading.Thread(target=solve, name="highs-solver", daemon=True)
+    worker.start()
+
+    try:
+        while worker.is_alive():
+            worker.join(0.25)
+    except KeyboardInterrupt:
+        print("\nInterrupt requested; asking HiGHS to stop...")
+        stop_requested.set()
+        while worker.is_alive():
+            worker.join(0.25)
+    finally:
+        for callback_type in callback_types:
+            highs.stopCallback(callback_type)
+
+    if failure:
+        raise failure[0]
+
+
+def _strengthen_power_target(
+    matrix: sp.spmatrix,
+    row_lower: np.ndarray,
+    row_upper: np.ndarray,
+    *,
+    grid: int,
+    target_power: float,
+    roboport_substitution_factor: int,
+) -> tuple[sp.csr_matrix, np.ndarray, np.ndarray]:
+    """Add redundant integer count bounds implied by a power target."""
+
+    dd = grid * grid
+    roboport_count = len(objectives.roboport_roots_for_grid(grid))
+    solar_unit = parameters.SOLAR_PANEL_POWER * parameters.ETA_S
+    accumulator_unit = (
+        parameters.ACCUMULATOR_CHARGE
+        / parameters.DAY_DURATION
+        / parameters.C_ON
+    )
+    minimum_solar = int(np.ceil(target_power / solar_unit - 1e-9))
+    minimum_accumulators = max(
+        0,
+        int(
+            np.ceil(
+                target_power / accumulator_unit
+                - roboport_substitution_factor * roboport_count
+                - 1e-9
+            )
+        ),
+    )
+
+    strengthening = sp.lil_matrix((2, matrix.shape[1]), dtype=float)
+    strengthening[0, :dd] = 1
+    strengthening[1, dd : 2 * dd] = 1
+
+    print(
+        f"Target implies at least {minimum_solar} solar panels and "
+        f"{minimum_accumulators} placed accumulators"
+    )
+
+    return (
+        sp.vstack([sp.csr_matrix(matrix), strengthening.tocsr()], format="csr"),
+        np.concatenate(
+            [
+                np.asarray(row_lower),
+                [minimum_solar, minimum_accumulators],
+            ]
+        ),
+        np.concatenate([np.asarray(row_upper), [np.inf, np.inf]]),
+    )
 
 
 def _save_solution(
@@ -206,9 +313,9 @@ def build_parser() -> argparse.ArgumentParser:
         "--target-power",
         type=float,
         help=(
-            "Pure feasibility target in kW. Fixes z to this value and uses "
-            "a zero objective, so HiGHS stops as soon as it finds a feasible "
-            "packing or proves the target impossible."
+            "Feasibility target in kW. Keeps the power objective for search "
+            "guidance, adds direct integer count bounds, and stops after the "
+            "first feasible incumbent."
         ),
     )
     parser.add_argument(
@@ -299,11 +406,18 @@ def main() -> int:
         variable_lower_bounds[-1] = requested_power
 
     if args.target_power is not None:
-        variable_lower_bounds = np.asarray(variable_lower_bounds).copy()
-        variable_upper_bounds = np.asarray(variable_upper_bounds).copy()
-        objective = np.zeros_like(objective)
-        variable_lower_bounds[-1] = args.target_power
-        variable_upper_bounds[-1] = args.target_power
+        (
+            constraint_matrix,
+            constraint_lower_bounds,
+            constraint_upper_bounds,
+        ) = _strengthen_power_target(
+            constraint_matrix,
+            constraint_lower_bounds,
+            constraint_upper_bounds,
+            grid=args.grid,
+            target_power=args.target_power,
+            roboport_substitution_factor=roboport_substitution_factor,
+        )
 
     print(
         f"Model: {constraint_matrix.shape[0]} rows, "
@@ -322,9 +436,10 @@ def main() -> int:
         time_limit=args.time_limit,
         mip_rel_gap=args.mip_rel_gap,
         random_seed=args.random_seed,
+        stop_after_first_solution=args.target_power is not None,
     )
 
-    highs.run()
+    _run_highs_interruptibly(highs)
 
     info = highs.getInfo()
     status = highs.getModelStatus()
