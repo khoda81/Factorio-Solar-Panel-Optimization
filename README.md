@@ -65,3 +65,51 @@ problems, but its not as easy as changing variables, this is not made fully gene
 ## License
 
 This project is available under the [MIT License](LICENSE).
+
+
+## Parameterized planet solver
+
+This fork adds a direct `highspy` CLI so the same MILP can be solved with
+different planetary power profiles without editing model code.
+
+Install/update the environment:
+
+```bash
+uv sync
+```
+
+For the Vulcanus temporary-roboport problem (normal solar panels and
+accumulators):
+
+```bash
+uv run factorio-solar-solve \
+  --planet vulcanus \
+  --roboport temporary \
+  --threads 8
+```
+
+That runs the full simultaneous Stage A+B search. For a much faster packing
+search around the repository's sample electrical network:
+
+```bash
+uv run factorio-solar-solve \
+  --planet vulcanus \
+  --roboport temporary \
+  --threads 8 \
+  --network support/sample_network.txt
+```
+
+Use `--time-limit SECONDS` to cap a run and `--min-power KW` to turn a
+candidate power level into a feasibility target. Results are written under
+`results/`.
+
+The built-in normal-quality presets are:
+
+| Planet | Day | Solar multiplier | Sustained panel power | Accumulators / panel |
+| --- | ---: | ---: | ---: | ---: |
+| Nauvis | 420 s | 100% | 42 kW | 0.84672 |
+| Vulcanus | 90 s | 400% | 168 kW | 0.72576 |
+
+In temporary-roboport mode the central 4x4 roboport must still fit and be
+powered during construction, but the power balance treats its eventual
+footprint as four 2x2 accumulators.
