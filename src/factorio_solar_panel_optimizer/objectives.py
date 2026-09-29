@@ -1,6 +1,6 @@
 import numpy as np
 from . import parameters
-from support import utilities as util
+from .support import utilities as util
 import matplotlib.pyplot as plt
 import scipy.sparse as sp
 
