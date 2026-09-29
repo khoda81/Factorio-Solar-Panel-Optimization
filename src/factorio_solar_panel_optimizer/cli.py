@@ -73,10 +73,8 @@ def _build_highs(
 
     integer_indices = np.flatnonzero(np.asarray(integrality) != 0).astype(np.int32)
     if integer_indices.size:
-        integer_types = np.full(
-            integer_indices.size,
-            highspy.HighsVarType.kInteger,
-            dtype=np.uint8,
+        integer_types = np.array(
+            [highspy.HighsVarType.kInteger] * integer_indices.size
         )
         highs.changeColsIntegrality(
             integer_indices.size,
