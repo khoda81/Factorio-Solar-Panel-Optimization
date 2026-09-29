@@ -189,13 +189,31 @@ def _strengthen_power_target(
         ),
     )
 
-    strengthening = sp.lil_matrix((2, matrix.shape[1]), dtype=float)
+    maximum_network_tiles = (
+        dd
+        - 9 * minimum_solar
+        - 4 * minimum_accumulators
+        - 16 * roboport_count
+    )
+    if maximum_network_tiles < 0:
+        raise ValueError(
+            "The target requires more panel/accumulator/roboport area than "
+            "the periodic cell contains."
+        )
+
+    strengthening = sp.lil_matrix((3, matrix.shape[1]), dtype=float)
     strengthening[0, :dd] = 1
     strengthening[1, dd : 2 * dd] = 1
+    strengthening[2, 2 * dd : 3 * dd] = 4
+    strengthening[2, 4 * dd : 5 * dd] = 1
 
     print(
         f"Target implies at least {minimum_solar} solar panels and "
         f"{minimum_accumulators} placed accumulators"
+    )
+    print(
+        "Target leaves at most "
+        f"{maximum_network_tiles} tiles for substations + medium poles"
     )
 
     return (
@@ -203,10 +221,15 @@ def _strengthen_power_target(
         np.concatenate(
             [
                 np.asarray(row_lower),
-                [minimum_solar, minimum_accumulators],
+                [minimum_solar, minimum_accumulators, -np.inf],
             ]
         ),
-        np.concatenate([np.asarray(row_upper), [np.inf, np.inf]]),
+        np.concatenate(
+            [
+                np.asarray(row_upper),
+                [np.inf, np.inf, maximum_network_tiles],
+            ]
+        ),
     )
 
 
@@ -293,8 +316,16 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--time-limit", type=float)
     parser.add_argument("--mip-rel-gap", type=float, default=0.0)
     parser.add_argument("--random-seed", type=int, default=0)
-    parser.add_argument("--max-substations", type=int, default=7)
-    parser.add_argument("--max-medium-poles", type=int, default=5)
+    parser.add_argument(
+        "--max-substations",
+        type=int,
+        help="Optional explicit substation-count cap; normally leave unset.",
+    )
+    parser.add_argument(
+        "--max-medium-poles",
+        type=int,
+        help="Optional explicit medium-pole-count cap; normally leave unset.",
+    )
     parser.add_argument(
         "--network",
         type=Path,
