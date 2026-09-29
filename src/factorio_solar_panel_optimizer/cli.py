@@ -155,6 +155,12 @@ def _summary(solution: np.ndarray, grid: int, temporary_roboport: bool) -> None:
     print(f"Substations: {substations}")
     print(f"Medium poles: {medium_poles}")
     print(f"Roboports during construction: {roboports}")
+    area = grid * grid
+    print(f"Power density: {sustained_power / area:.6f} kW/tile")
+    print(
+        f"50x50-equivalent power density: "
+        f"{sustained_power * 2500 / area / 1000:.6f} MW"
+    )
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -197,6 +203,15 @@ def build_parser() -> argparse.ArgumentParser:
         help="Require at least this much sustained power, in kW.",
     )
     parser.add_argument(
+        "--target-power",
+        type=float,
+        help=(
+            "Pure feasibility target in kW. Fixes z to this value and uses "
+            "a zero objective, so HiGHS stops as soon as it finds a feasible "
+            "packing or proves the target impossible."
+        ),
+    )
+    parser.add_argument(
         "--output",
         type=Path,
         help="Result directory. Defaults to results/<run-name>_<timestamp>.",
@@ -211,6 +226,14 @@ def main() -> int:
         raise SystemExit("--threads must be at least 1")
     if args.min_power < 0:
         raise SystemExit("--min-power must be nonnegative")
+    if args.target_power is not None and args.target_power < 0:
+        raise SystemExit("--target-power must be nonnegative")
+    if args.target_power is not None and args.min_power:
+        raise SystemExit("Use either --min-power or --target-power, not both")
+    if not 20 <= args.grid <= 50:
+        raise SystemExit(
+            "--grid currently supports periodic cells from 20 through 50 tiles"
+        )
     if args.mip_rel_gap < 0:
         raise SystemExit("--mip-rel-gap must be nonnegative")
 
@@ -235,6 +258,10 @@ def main() -> int:
 
     dd = args.grid * args.grid
 
+    requested_power = (
+        args.target_power if args.target_power is not None else args.min_power
+    )
+
     if args.network is None:
         model = objectives.construct_restrictive_solver(
             args.grid,
@@ -251,7 +278,7 @@ def main() -> int:
             args.grid,
             network[:dd],
             network[dd:],
-            min_power=args.min_power,
+            min_power=requested_power,
             roboport_substitution_factor=roboport_substitution_factor,
         )
         run_kind = "fixed"
@@ -267,9 +294,16 @@ def main() -> int:
         integrality,
     ) = model
 
-    if args.network is None and args.min_power:
+    if args.network is None and requested_power:
         variable_lower_bounds = np.asarray(variable_lower_bounds).copy()
-        variable_lower_bounds[-1] = args.min_power
+        variable_lower_bounds[-1] = requested_power
+
+    if args.target_power is not None:
+        variable_lower_bounds = np.asarray(variable_lower_bounds).copy()
+        variable_upper_bounds = np.asarray(variable_upper_bounds).copy()
+        objective = np.zeros_like(objective)
+        variable_lower_bounds[-1] = args.target_power
+        variable_upper_bounds[-1] = args.target_power
 
     print(
         f"Model: {constraint_matrix.shape[0]} rows, "
